@@ -16,9 +16,9 @@ function mesdplot(x,groupIx,nSample,factor,isDep,fName,contrast)
 % - levels of factors are written in upper left corner of each subplot
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.4, January 2015
-% Code by Harald Hentschke (University of Tübingen) and 
-% Maik Stüttgen (University of Bochum)
+% Measures of Effect Size Toolbox Version 1.6, September 2017
+% Code by Harald Hentschke (University Hospital of Tübingen) and 
+% Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
 % Eur J Neurosci 34:1887-1894, 2011
 % -------------------------------------------------------------------------

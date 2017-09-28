@@ -57,7 +57,7 @@ function stats=mes(X,Y,esm,varargin)
 %   number of effect size measures, by default approximate analytical CIs
 %   will be computed. See the documentation for details. Note that setting
 %   this option is without effect if bootstrapping is requested (see input
-%   variable 'nBoot' above).
+%   variable 'nBoot' above); a warning will be issued in this case.
 % stats=mes(...,'confLevel',0.90)  computes 90 % confidence intervals (ci)
 %   of the statistic in question (95 % ci are the default; any value may be
 %   specified). If ci cannot be computed analytically and bootstrappig was
@@ -126,9 +126,9 @@ function stats=mes(X,Y,esm,varargin)
 %   post-analysis information. 
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.4, January 2015
-% Code by Harald Hentschke (University of Tübingen) and 
-% Maik Stüttgen (University of Bochum)
+% Measures of Effect Size Toolbox Version 1.6, September 2017
+% Code by Harald Hentschke (University Hospital of Tübingen) and 
+% Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
 % Eur J Neurosci 34:1887-1894, 2011
 % -------------------------------------------------------------------------
@@ -157,7 +157,7 @@ if nvarg
     for g=1:2:nvarg
       % check which optional input parameter is given, ignoring case, and
       % impose spelling used internally
-      ix=find(strcmp(lower(varargin{g}),lower(v)));
+      ix=find(strcmpi(varargin{g},v));
       if ~isempty(ix)
         varargin{g}=v{ix};
       else
@@ -233,21 +233,21 @@ if isempty(find(strcmpi(missVal,{'listwise','pairwise'})))
 end
 
 % --- check input X and Y
-[nRowX nColX]=size(X);
-[nRowY nColY]=size(Y);
+[nRowX, nColX]=size(X);
+[nRowY, nColY]=size(Y);
 % reshape X and Y in a few selected scenarios
 % - if X is a single row array
 if nRowX==1 && nColX>1
   warning('input variable X is a single row array - reshaping');
   X=X(:);
-  [nRowX nColX]=size(X);
+  [nRowX, nColX]=size(X);
 end
 % - if X is a single column array and Y a single row array, reshape Y as 
 % well
 if nColX==1 && nRowY==1 && nColY>1
   warning('input variable Y is a single row-array - reshaping')
   Y=Y(:);
-  [nRowY nColY]=size(Y);
+  [nRowY, nColY]=size(Y);
 end
 % (if Y is a single row array while X is not the situation is ambiguous, so
 % we'd better let the code produce an error further below)
@@ -331,7 +331,7 @@ if any(ismember(esm,'glassdelta'))
 end
 if any(ismember(esm,'mdbysd'))
   if ~isDep
-    error('''mdbysd'' (mean difference divided by std of difference score) is not defined for independent samples (see parameter ''isDep'')');
+    error('''mdbysd'' requires dependent samples (see parameter ''isDep'')');
   end
 end
 
@@ -346,8 +346,13 @@ end
 % --- check bootstrapping settings
 doBoot=false;
 if isfinite(nBoot)
-  if nBoot>=minNBootstrap;
+  if nBoot>=minNBootstrap
     doBoot=true;
+    if exactCi
+      warning(cat(2,['exact confidence intervals are requested (see input argument ''exactCi'') '],...
+        ['but bootstrapping takes precedence if input argument ''nBoot'' is at least ' int2str(minNBootstrap)]));
+      exactCi=false;
+    end
   else
     if nBoot~=0
       % warn only if nBoot small but different from zero because zero may
@@ -374,7 +379,7 @@ end
 
 % preallocate results arrays:
 % - ttest associated parameters:
-allocationNanny=repmat(nan,[1 nColX]);
+allocationNanny=nan([1 nColX]);
 % value of test statistic 
 stats.t.tstat=allocationNanny;
 % p values (which will be kept only for original data)
@@ -476,8 +481,17 @@ for g=1:nColX
     seD=stdD./sqrt(n1);
     % t statistic
     tst=(m1-m2)./seD;
+    % correlation, if needed
+    isCorrNeeded=strfind(esm,'hedges');
+    isCorrNeeded=[isCorrNeeded{:}];
+    if ~isempty(isCorrNeeded)
+      % compute correlations between matching columns using Elliot Layden's
+      % fast_corr, which is a definite time-saver over the standard corr
+      % due to the potentially numerous columns in x and y
+      xyCorr=fast_corr(x,y);
+    end
   else
-    % independent case: n=[n1+n2-2]
+    % independent case: df=[n1+n2-2]
     df=n1+n2-2;
     % pooled (within-groups) variance
     sP=((n1-1).*s1 + (n2-1).*s2)./(n1+n2-2);
@@ -615,13 +629,14 @@ for g=1:nColX
             ciType='exact analytical';
           end
         end
-              
+        
       case 'hedgesg'
         % Hedges' g
         if isDep
-          % n=n1=n2
+          % (Kline p. 107, formula 4.11; n=n1=n2)
           es=tst.*sqrt(2*stdD.^2./(n1.*(s1+s2)));
         else
+          % (Kline p. 101, formula 4.4)
           es=(m1-m2)./sqrt(sP);
         end
         % correct for bias due to small n (both dependent and independent
@@ -633,7 +648,7 @@ for g=1:nColX
             % approximate ci for paired data (Nakagawa & Cuthill 2007) -
             % note that n=n1=n2 and that correlation coeff r is needed; no
             % bias correction here
-            se=sqrt((2-2*corr(x,y))./n1 + es.^2./(2*n1-1));
+            se=sqrt((2-2*xyCorr)./n1 + es.^2./(2*n1-1));
             ci=cat(1,es-ciFac.*se,es+ciFac.*se);
             if g==1
               ciType='approximate analytical';
@@ -916,7 +931,6 @@ for tti=1:nEs
     plot(ci','b-');
   end
 end
-  
   
 % ======================= REPOSITORY =======================================
 
