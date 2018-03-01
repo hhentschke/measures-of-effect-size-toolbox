@@ -57,18 +57,12 @@ function stats=mes(X,Y,esm,varargin)
 %   number of effect size measures, by default approximate analytical CIs
 %   will be computed. See the documentation for details. Note that setting
 %   this option is without effect if bootstrapping is requested (see input
-%   variable 'nBoot' above); a warning will be issued in this case.
+%   variable 'nBoot' above).
 % stats=mes(...,'confLevel',0.90)  computes 90 % confidence intervals (ci)
 %   of the statistic in question (95 % ci are the default; any value may be
 %   specified). If ci cannot be computed analytically and bootstrappig was
 %   not requested, the corresponding fields of output struct stats (see
 %   below) will contain NaNs.
-% stats=mes(...,'gDenom','rm')  uses a standardizer (=denominator) in the
-%   formula for Hedges' g for DEPENDENT (paired) data which factors in the
-%   correlation between inputs x and y. The default is 'sp', the pooled
-%   standard deviation (which is also the standard for independent data,
-%   and which in the dependent case reduces to the average of the standard
-%   deviations of x and y due to n1=n2). See the documentation for details.
 % stats=mes(...,'ROCtBoot',1)  computes bootstrap confidence intervals for 
 %   the area under the receiver-operating curve according to the 'bootstrap
 %   t' method, which is more conservative than the 'bootstrap percentile'
@@ -79,11 +73,11 @@ function stats=mes(X,Y,esm,varargin)
 %   the computation of tail ratios. For positive values the right tail
 %   ratio will be computed, for negative values the left tail ratio (see
 %   documentation for further information). Default is 1.
-% stats=mes(...,'trMeth','analytic')  determines that the tail ratios shall
-%   be computed 'analytically', assuming normal distributions, in the
-%   computation of tail ratios. Default is 'count', which means that the
-%   ratios will be determined by counting the actual data points beyond the
-%   cutoff (relatively insensitive to deviations from normality)
+% stats=mes(...,'trMeth','analytic')  determines that the tail ratios shall be computed
+%   'analytically', assuming normal distributions, in the computation of
+%   tail ratios. Default is 'count', which means that the ratios will be
+%   determined by counting the actual data points beyond the cutoff
+%   (relatively insensitive to deviations from normality)
 % stats=mes(...,'doPlot',1)  will produce very simple plots of the results 
 %   (one figure per effect size measure requested)
 %
@@ -132,16 +126,11 @@ function stats=mes(X,Y,esm,varargin)
 %   post-analysis information. 
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.6, February 2018
+% Measures of Effect Size Toolbox Version 1.6, September 2017
 % Code by Harald Hentschke (University Hospital of Tübingen) and 
 % Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
 % Eur J Neurosci 34:1887-1894, 2011
-% 
-% Acknowledgements:
-% - Thanks to Rainer Düsing for discussion of and cooperation on bias 
-%   correction for Hedges' g for dependent data
-% - Function fast_corr by Elliot Layden
 % -------------------------------------------------------------------------
 
 % ----- default values & varargin -----
@@ -149,10 +138,9 @@ function stats=mes(X,Y,esm,varargin)
 isDep=false;
 missVal='listwise';
 nBoot=0;
+ROCtBoot=false;
 exactCi=false;
 confLevel=.95;
-gDenom='sp';
-ROCtBoot=false;
 trCutoff=1;
 trMeth='count';
 doPlot=false;
@@ -185,9 +173,6 @@ end
 
 % ----- a few 'constants':
 alpha=1-confLevel;
-% critical z value corresponding to alpha
-zCrit=norminv(1-alpha/2);
-
 % minimal number of bootstrapping runs below which a warning will be issued
 % (and bootstrapping will be skipped)
 minNBootstrap=1000;
@@ -207,6 +192,7 @@ list_analysis={...
   'U3_1',        1, 'fraction of values below comparison value';...
   'md',          2, 'mean difference (unstandardized)';...
   'hedgesg',     2, 'Hedges'' g (standardized mean difference)';...
+  'hedgesg_borenstein',     2, 'Hedges'' g (standardized mean difference)';...  
   'glassdelta',  2, 'Glass''s delta (standardized mean difference)';...
   'mdbysd',      2, 'mean difference divided by std of difference score';...
   'requiv',      2, 'pointbiserial correlation coefficient';...
@@ -243,7 +229,7 @@ if isempty(intersect(uTag,[1 2]))
   error('internal: uTag different from 1 or 2');
 end
 % illegal values for missVal
-if ~any(strcmpi(missVal,{'listwise','pairwise'}))
+if isempty(find(strcmpi(missVal,{'listwise','pairwise'})))
   error('illegal value for input parameter ''missVal'' (choose ''listwise'' or ''pairwise)''');
 end
 
@@ -289,8 +275,8 @@ end
 % - first, convert infs to nans
 X(~isfinite(X))=nan;
 Y(~isfinite(Y))=nan;
-[nanRowX,nanColX]=find(isnan(X)); %#ok<ASGLU>
-[nanRowY,nanColY]=find(isnan(Y)); %#ok<ASGLU>
+[nanRowX,nanColX]=find(isnan(X));
+[nanRowY,nanColY]=find(isnan(Y));
 % - depending on how missing values shall be treated, set selected
 % values or entire rows to NaN. Differentiate between 1-sample and 2-sample
 % analyses
@@ -339,16 +325,14 @@ if any(ismember(esm,'auroc'))
     warning('''auroc'' (receiver-operating characteristic) is implemented for independent samples; confidence intervals for dependent data are likely not correct (see parameter ''isDep'')');
   end
 end
-if any(ismember(esm,'mdbysd'))
-  if ~isDep
-    error('''mdbysd'' requires dependent samples (see parameter ''isDep'')');
+if any(ismember(esm,'glassdelta'))
+  if isDep
+    warning('''glassdelta'' does not make sense for dependent samples (see parameter ''isDep'')');
   end
 end
-if any(ismember(esm,'hedgesg'))
-  if isDep
-    if ~ischar(gDenom) || ~ismember(gDenom,{'sp','rm'})
-      error('''gDenom'' must be either ''sp'' or ''rm''');
-    end
+if any(ismember(esm,{'mdbysd','hedgesg_borenstein'}))
+  if ~isDep
+    error('''mdbysd'' and ''hedgesg_borenstein'' require dependent samples (see parameter ''isDep'')');
   end
 end
 
@@ -366,7 +350,7 @@ if isfinite(nBoot)
   if nBoot>=minNBootstrap
     doBoot=true;
     if exactCi
-      warning(cat(2,'exact confidence intervals are requested (see input argument ''exactCi'') ',...
+      warning(cat(2,['exact confidence intervals are requested (see input argument ''exactCi'') '],...
         ['but bootstrapping takes precedence if input argument ''nBoot'' is at least ' int2str(minNBootstrap)]));
       exactCi=false;
     end
@@ -505,7 +489,7 @@ for g=1:nColX
       % compute correlations between matching columns using Elliot Layden's
       % fast_corr, which is a definite time-saver over the standard corr
       % due to the potentially numerous columns in x and y
-      xyCorr=fast_corr(x,y); %#ok<NASGU>
+      xyCorr=fast_corr(x,y);
     end
   else
     % independent case: df=[n1+n2-2]
@@ -526,17 +510,13 @@ for g=1:nColX
   % ditto for p and sd
   stats.t.p(g)=p(1);
   stats.t.df(g)=df(1);
-  % place information on standardizer for hedges' g in stats struct
-  if any(ismember(esm,'hedgesg'))
-    stats.hedgesgDenom=gDenom;
-  end
 
   % - inverse cumulative t distribution:
   % n1, n2 and therefore df are identical for the original data and the
   % sampled (bootstrapped) data, so compute inverse cumulative t
   % distribution only from the former. However, as the computations below
-  % rely on tCrit having dimensions [1 by size(x,2)] expand it here
-  tCrit=repmat(-tinv(alpha/2,df(1)),[1 size(x,2)]);
+  % rely on ciFac having dimensions [1 by size(x,2)] expand it here
+  ciFac=repmat(-tinv(alpha/2,df(1)),[1 size(x,2)]);
   
   % ***********************************************************************
   %                  loop over all ES computations
@@ -625,10 +605,10 @@ for g=1:nColX
         if ~doBoot
           if isDep
             % se=standard error of difference scores
-            ci=cat(1,es-tCrit.*seD,es+tCrit.*seD);
+            ci=cat(1,es-ciFac.*seD,es+ciFac.*seD);
           else
             % se=standard error of mean difference
-            ci=cat(1,es-tCrit.*seP,es+tCrit.*seP);
+            ci=cat(1,es-ciFac.*seP,es+ciFac.*seP);
           end
           if g==1
             % confidence intervals of mean differences computed from
@@ -642,7 +622,7 @@ for g=1:nColX
       case 'mdbysd'
         % mean difference divided by std of difference score (defined only
         % for dependent data)
-        es=(m1-m2)./stdD;
+        es=(m1-m2)./std(x-y);
         if ~doBoot
           % exact ci (Smithson 2003, p.34-46, formula 4.4)
           ci=ncpci(tst,'t',n1-1,'confLevel',confLevel)'/sqrt(n1);
@@ -650,70 +630,57 @@ for g=1:nColX
             ciType='exact analytical';
           end
         end
-       
-      case 'hedgesg'
+
+      case 'hedgesg_borenstein'
+        % Hedges' g for dependent data computed according to Borenstein
+        % (2009):
         if isDep
-          % dependent (paired, matched) samples: computations differ
-          % depending on the chosen denominator. Note that in the dependent
-          % case n is equal to the number of paired samples and that for
-          % convenience in the code below variable n1 is used
-          switch gDenom %#ok<*UNRCH>
-            case 'sp'
-              % (Kline 2004, p. 107, formula 4.11; this yields the same
-              % result as the formula for independent samples below (within
-              % machine precision); however, that formula is not used here
-              % because variable sP is not by default computed for
-              % dependent samples)
-              es=tst.*sqrt(2*stdD.^2./(n1.*(s1+s2)));
-              if ~doBoot
-                % ci proposed by Bonett (2015), which is far superior to
-                % any other variant we know of:
-                % - se (formula 9)
-                se=es.^2.*(s1.^2 + s2.^2 + 2*xyCorr.^2.*s1.*s2)./...
-                  (8*df.*((s1+s2)/2).^2) + stdD.^2./((s1+s2)/2.*df);
-                se=sqrt(se);
-                % - ci (note usage of zCrit instead of tCrit!)
-                ci=cat(1,es-zCrit.*se,es+zCrit.*se);
-                if g==1
-                  ciType='approximate analytical';
-                end
-              end
-              % bias factor according to Bonett (2009), applied only to
-              % point estimate, not ci
-              biasFac=sqrt((n1-2)./(n1-1));
-              es=es.*biasFac;
-              
-            case 'rm'
-              % denominator is based on difference scores and correlation 
-              % Borenstein (2009), formulae 12.19 & 12.20
-              es=(m1-m2)./stdD.*sqrt(2-2*xyCorr);
-              % [alternatively, but identical within numerical precision in
-              % Matlab, given in table 12.2. of Borenstein 2009 as well as
-              % by Nakagawa & Cuthill 2007, Table 1, eq. 4:]
-              %         es=tst.*sqrt((2-2*xyCorr)./n1);
-              % standard error (formulae 12.21 & 12.22, Borenstein (2009))
-              se=sqrt((1./n1 + es.^2./(2*n1))*2.*(1-xyCorr));
-              % bias factor (formula 12.15, Borenstein (2009))
-              biasFac=1-(3./(4*df-1));
-              % compute ci and apply bias correction to them
-              if ~doBoot
-                ci=cat(1,es-tCrit.*se*biasFac,es+tCrit.*se*biasFac);
-                if g==1
-                  ciType='approximate analytical';
-                end
-              end
-              % apply bias correction to es (only after ci have been computed)
-              es=es.*biasFac;
-          end
-        else
-          % independent samples:
-          % (Kline 2004, p. 101, formula 4.4)
-          es=(m1-m2)./sqrt(sP);
-          % correct for bias due to small n (Hedges 1981, Kline 2004, p.
-          % 102 & 106)
-          biasFac=(1-(3./(4*n1+4*n2-9)));
-          es=es.*biasFac;
+          % formulae 12.19 & 12.20
+          es=(m1-m2)./stdD.*sqrt(2-2*xyCorr)
+          % [alternatively, but identical within numerical precision in
+          % Matlab, given in table 12.2. of Borenstein 2009 as well as by
+          % Nakagawa & Cuthill 2007, Table 1, eq. 4:]
+          %  es=tst.*sqrt((2-2*xyCorr)./n1);
+          % formulae 12.21 & 12.22 (remember that for convenience here in
+          % the code we don't define sample size n but instead use n1=n2)
+          se=sqrt((1./n1 + es.^2./(2*n1))*2.*(1-xyCorr));
+          % bias factor (formula 12.15)
+          biasFac=1-(3./(4*df-1));
+          % compute ci and apply bias correction to them
           if ~doBoot
+            ci=cat(1,es-ciFac.*se*biasFac,es+ciFac.*se*biasFac);
+            if g==1
+              ciType='approximate analytical';
+            end
+          end
+          % apply bias correction to es (only after ci have been computed)
+          es=es.*biasFac;
+        end
+        
+      case 'hedgesg'
+        % Hedges' g
+        if isDep
+          % (Kline p. 107, formula 4.11; n=n1=n2)
+          es=tst.*sqrt(2*stdD.^2./(n1.*(s1+s2)));
+        else
+          % (Kline p. 101, formula 4.4)
+          es=(m1-m2)./sqrt(sP);
+        end
+        % correct for bias due to small n (both dependent and independent
+        % data, Kline 2004 (p. 102, 106); Nakagawa & Cuthill 2007)
+        biasFac=(1-(3./(4*n1+4*n2-9)));
+        es=es.*biasFac;
+        if ~doBoot
+          if isDep
+            % approximate ci for paired data (Nakagawa & Cuthill 2007) -
+            % note that n=n1=n2 and that correlation coeff r is needed; no
+            % bias correction here
+            se=sqrt((2-2*xyCorr)./n1 + es.^2./(2*n1-1));
+            ci=cat(1,es-ciFac.*se,es+ciFac.*se);
+            if g==1
+              ciType='approximate analytical';
+            end
+          else
             if exactCi
               % exact ci (Smithson 2003, p. 37), including bias correction
               ci=biasFac*ncpci(tst,'t',n1+n2-2,'confLevel',confLevel)'*sqrt((n1+n2)/(n1*n2));
@@ -724,7 +691,7 @@ for g=1:nColX
               % approximate ci (Nakagawa & Cuthill 2007, eq. 17 in table
               % 3), including bias correction
               se=sqrt((n1+n2)./(n1.*n2) + (es.^2./(2*n1+2*n2-4)));
-              ci=biasFac*cat(1,es-tCrit.*se,es+tCrit.*se);
+              ci=biasFac*cat(1,es-ciFac.*se,es+ciFac.*se);
               if g==1
                 ciType='approximate analytical';
               end
@@ -737,7 +704,7 @@ for g=1:nColX
         % analytical confidence intervals: only approximate
         if ~doBoot
           se=sqrt(es^2/(2*n2-2)+(n1+n2)/(n1*n2));
-          ci=cat(1,es-tCrit.*se,es+tCrit.*se);
+          ci=cat(1,es-ciFac.*se,es+ciFac.*se);
           if g==1
             ciType='approximate analytical';
           end
@@ -757,10 +724,10 @@ for g=1:nColX
           if ~isDep && exactCi
             % exact analytical confidence intervals for partial eta2, of
             % which requiv is a special case (Smithson 2003, p.43 [5.6])
-            ci=ncpci(tst^2,'F',[1 stats.t.df(g)],'confLevel',confLevel)';
+            ci=ncpci(tst^2,'F',[1 stats.t.df],'confLevel',confLevel)';
             % don't forget to sqrt and to take care of sign
-            ci=sqrt(ci./(ci+1+stats.t.df(g)+1));
-            if es<0 %#ok<BDSCI> ...because es is for sure a scalar here
+            ci=sqrt(ci./(ci+1+stats.t.df+1));
+            if es<0
               ci=-1*fliplr(ci);
             end
             if g==1
@@ -769,7 +736,7 @@ for g=1:nColX
           else
             % all other cases: approximate CI via Z-transform
             tmp=.5*log((1+es)/(1-es));
-            tmp=tmp+[-1; 1]*tCrit./sqrt(n1+n2-3);
+            tmp=tmp+[-1; 1]*ciFac./sqrt(n1+n2-3);
             % transform back
             ci=(exp(2*tmp)-1)./(exp(2*tmp)+1);
             if g==1
@@ -827,7 +794,8 @@ for g=1:nColX
           % (J Math Psych 12:387-415)
           se=se_auroc(es,n1,n2);
           % note that normality is assumed in this step
-          ci=cat(1,es-zCrit*se,es+zCrit*se);
+          tmp=norminv(1-alpha/2).*se;
+          ci=cat(1,es-tmp,es+tmp);
           if g==1
             ciType='approximate analytical';
           end
