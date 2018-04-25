@@ -63,12 +63,6 @@ function stats=mes(X,Y,esm,varargin)
 %   specified). If ci cannot be computed analytically and bootstrappig was
 %   not requested, the corresponding fields of output struct stats (see
 %   below) will contain NaNs.
-% stats=mes(...,'gDenom','rm')  uses a standardizer (=denominator) in the
-%   formula for Hedges' g for DEPENDENT (paired) data which factors in the
-%   correlation between inputs x and y. The default is 'sp', the pooled
-%   standard deviation (which is also the standard for independent data,
-%   and which in the dependent case reduces to the average of the standard
-%   deviations of x and y due to n1=n2). See the documentation for details.
 % stats=mes(...,'ROCtBoot',1)  computes bootstrap confidence intervals for 
 %   the area under the receiver-operating curve according to the 'bootstrap
 %   t' method, which is more conservative than the 'bootstrap percentile'
@@ -96,7 +90,7 @@ function stats=mes(X,Y,esm,varargin)
 % 'U3_1'        fraction of values below comparison value
 %        -- measures between two samples: --
 % 'md'          mean difference
-% 'hedgesg'     Hedges' g (standardized mean difference)
+% 'hedgesg'     Hedges's g (standardized mean difference)
 % 'glassdelta'  Glass's delta (standardized mean difference)
 % 'mdbysd'      mean difference divided by std of difference score
 % 'requiv'      point-biserial correlation coefficient 
@@ -132,16 +126,17 @@ function stats=mes(X,Y,esm,varargin)
 %   post-analysis information. 
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.6, February 2018
+% Measures of Effect Size Toolbox Version 1.6, April 2018
 % Code by Harald Hentschke (University Hospital of Tübingen) and 
 % Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
 % Eur J Neurosci 34:1887-1894, 2011
 % 
 % Acknowledgements:
-% - Thanks to Rainer Düsing for discussion of and cooperation on bias 
-%   correction for Hedges' g for dependent data
+% - Thanks to Rainer Düsing University of Osnabrück) for discussion of and
+%   cooperation on bias correction for Hedges's g for dependent data
 % - Function fast_corr by Elliot Layden
+% (https://de.mathworks.com/matlabcentral/fileexchange/63082-fast-corr)
 % -------------------------------------------------------------------------
 
 % ----- default values & varargin -----
@@ -151,7 +146,6 @@ missVal='listwise';
 nBoot=0;
 exactCi=false;
 confLevel=.95;
-gDenom='sp';
 ROCtBoot=false;
 trCutoff=1;
 trMeth='count';
@@ -206,7 +200,7 @@ list_analysis={...
   'g1',          1, 'standardized difference (sample mean - comparison value)';...
   'U3_1',        1, 'fraction of values below comparison value';...
   'md',          2, 'mean difference (unstandardized)';...
-  'hedgesg',     2, 'Hedges'' g (standardized mean difference)';...
+  'hedgesg',     2, 'Hedges''s g (standardized mean difference)';...
   'glassdelta',  2, 'Glass''s delta (standardized mean difference)';...
   'mdbysd',      2, 'mean difference divided by std of difference score';...
   'requiv',      2, 'pointbiserial correlation coefficient';...
@@ -342,13 +336,6 @@ end
 if any(ismember(esm,'mdbysd'))
   if ~isDep
     error('''mdbysd'' requires dependent samples (see parameter ''isDep'')');
-  end
-end
-if any(ismember(esm,'hedgesg'))
-  if isDep
-    if ~ischar(gDenom) || ~ismember(gDenom,{'sp','rm'})
-      error('''gDenom'' must be either ''sp'' or ''rm''');
-    end
   end
 end
 
@@ -498,14 +485,21 @@ for g=1:nColX
     seD=stdD./sqrt(n1);
     % t statistic
     tst=(m1-m2)./seD;
-    % correlation, if needed
-    isCorrNeeded=strfind(esm,'hedges');
-    isCorrNeeded=[isCorrNeeded{:}];
-    if ~isempty(isCorrNeeded)
-      % compute correlations between matching columns using Elliot Layden's
-      % fast_corr, which is a definite time-saver over the standard corr
-      % due to the potentially numerous columns in x and y
-      xyCorr=fast_corr(x,y); %#ok<NASGU>
+    if ~doBoot
+      % correlation, if needed
+      isCorrNeeded=strfind(esm,'hedges');
+      isCorrNeeded=[isCorrNeeded{:}];
+      if ~isempty(isCorrNeeded)
+        if exactCi
+          % compute covariance
+          xyCov=sum((x-m1).*(y-m2)./(n1-1));
+        else
+          % compute correlations between matching columns using Elliot Layden's
+          % fast_corr, which is a definite time-saver over the standard corr
+          % due to the potentially numerous columns in x and y
+          xyCorr=fast_corr(x,y); %#ok<NASGU>
+        end
+      end
     end
   else
     % independent case: df=[n1+n2-2]
@@ -526,10 +520,6 @@ for g=1:nColX
   % ditto for p and sd
   stats.t.p(g)=p(1);
   stats.t.df(g)=df(1);
-  % place information on standardizer for hedges' g in stats struct
-  if any(ismember(esm,'hedgesg'))
-    stats.hedgesgDenom=gDenom;
-  end
 
   % - inverse cumulative t distribution:
   % n1, n2 and therefore df are identical for the original data and the
@@ -653,95 +643,96 @@ for g=1:nColX
        
       case 'hedgesg'
         if isDep
-          % dependent (paired, matched) samples: computations differ
-          % depending on the chosen denominator. Note that in the dependent
-          % case n is equal to the number of paired samples and that for
-          % convenience in the code below variable n1 is used
-          switch gDenom %#ok<*UNRCH>
-            case 'sp'
-              % (Kline 2004, p. 107, formula 4.11; this yields the same
-              % result as the formula for independent samples below (within
-              % machine precision); however, that formula is not used here
-              % because variable sP is not by default computed for
-              % dependent samples)
-              es=tst.*sqrt(2*stdD.^2./(n1.*(s1+s2)));
-              if ~doBoot
-                % ci proposed by Bonett (2015), which is far superior to
-                % any other variant we know of:
-                % - se (formula 9)
-                se=es.^2.*(s1.^2 + s2.^2 + 2*xyCorr.^2.*s1.*s2)./...
-                  (8*df.*((s1+s2)/2).^2) + stdD.^2./((s1+s2)/2.*df);
-                se=sqrt(se);
-                % - ci (note usage of zCrit instead of tCrit!)
-                ci=cat(1,es-zCrit.*se,es+zCrit.*se);
-                if g==1
-                  ciType='approximate analytical';
-                end
-              end
-              % bias factor according to Bonett (2009), applied only to
-              % point estimate, not ci
-              biasFac=sqrt((n1-2)./(n1-1));
-              es=es.*biasFac;
-              
-            case 'rm'
-              % denominator is based on difference scores and correlation 
-              % Borenstein (2009), formulae 12.19 & 12.20
-              es=(m1-m2)./stdD.*sqrt(2-2*xyCorr);
-              % [alternatively, but identical within numerical precision in
-              % Matlab, given in table 12.2. of Borenstein 2009 as well as
-              % by Nakagawa & Cuthill 2007, Table 1, eq. 4:]
-              %         es=tst.*sqrt((2-2*xyCorr)./n1);
-              % standard error (formulae 12.21 & 12.22, Borenstein (2009))
-              se=sqrt((1./n1 + es.^2./(2*n1))*2.*(1-xyCorr));
-              % bias factor (formula 12.15, Borenstein (2009))
-              biasFac=1-(3./(4*df-1));
-              % compute ci and apply bias correction to them
-              if ~doBoot
-                ci=cat(1,es-tCrit.*se*biasFac,es+tCrit.*se*biasFac);
-                if g==1
-                  ciType='approximate analytical';
-                end
-              end
-              % apply bias correction to es (only after ci have been computed)
-              es=es.*biasFac;
-          end
-        else
-          % independent samples:
-          % (Kline 2004, p. 101, formula 4.4)
-          es=(m1-m2)./sqrt(sP);
-          % correct for bias due to small n (Hedges 1981, Kline 2004, p.
-          % 102 & 106)
-          biasFac=(1-(3./(4*n1+4*n2-9)));
-          es=es.*biasFac;
+          % Note that in the dependent case n is equal to the number of
+          % paired samples and that for convenience in the code below
+          % variable n1 is used.
+          % Here we use formula 4.11 (Kline 2004, p. 107) which yields the
+          % same result as the formula for independent samples below
+          % (within machine precision); however, that formula is not used
+          % here because variable sP is not by default computed for
+          % dependent samples and we'd like to have these computations run
+          % as fast as possible and thus base them on precomputed values) 
+          es=tst.*sqrt(2*stdD.^2./(n1.*(s1+s2))); %#ok<*UNRCH>
           if ~doBoot
             if exactCi
-              % exact ci (Smithson 2003, p. 37), including bias correction
-              ci=biasFac*ncpci(tst,'t',n1+n2-2,'confLevel',confLevel)'*sqrt((n1+n2)/(n1*n2));
+              % Algina & Keselman (2003, formula 9)
+              ci=ncpci(tst,'t',n1-1,'confLevel',confLevel)'*...
+                sqrt((2*s1+2*s2-4*xyCov)./(n1*(s1+s2)));
               if g==1
                 ciType='exact analytical';
               end
             else
-              % approximate ci (Nakagawa & Cuthill 2007, eq. 17 in table
-              % 3), including bias correction
-              se=sqrt((n1+n2)./(n1.*n2) + (es.^2./(2*n1+2*n2-4)));
-              ci=biasFac*cat(1,es-tCrit.*se,es+tCrit.*se);
+              % ci proposed by Bonett (2015, formula 9), which has
+              % extremely precise coverage:
+              se=sqrt(es.^2.*(s1.^2 + s2.^2 + 2*xyCorr.^2.*s1.*s2)./...
+                (8*df.*((s1+s2)/2).^2) + stdD.^2./((s1+s2)/2.*df));
+              % - ci (note usage of zCrit instead of tCrit!)
+              ci=cat(1,es-zCrit.*se,es+zCrit.*se);
               if g==1
                 ciType='approximate analytical';
               end
             end
           end
+          % bias correction factor according to Bonett (2009), applied only
+          % to point estimate, not ci
+          biasFac=sqrt((n1-2)./(n1-1));
+          es=es.*biasFac;
+        else
+          % independent samples:
+          % (Kline 2004, p. 101, formula 4.4)
+          es=(m1-m2)./sqrt(sP);
+          if ~doBoot
+            if exactCi
+              % exact ci (Smithson 2003, p. 37)
+              ci=ncpci(tst,'t',n1+n2-2,'confLevel',confLevel)'*sqrt((n1+n2)/(n1*n2));
+              if g==1
+                ciType='exact analytical';
+              end
+            else
+              % approximate ci (Nakagawa & Cuthill 2007, eq. 17 in table
+              % 3; Kline 2004 eq. 4.12 and Table 4.5)
+              se=sqrt((n1+n2)./(n1.*n2) + (es.^2./(2*n1+2*n2-4)));
+              ci=cat(1,es-zCrit.*se,es+zCrit.*se);
+              if g==1
+                ciType='approximate analytical';
+              end
+            end
+          end
+          % bias correction factor (Hedges 1981, Kline 2004, p. 102 & 106),
+          % applied only to point estimate, not ci
+          biasFac=(1-(3./(4*n1+4*n2-9)));
+          es=es.*biasFac;
         end
         
       case 'glassdelta'
         es=(m1-m2)./sqrt(s1);
-        % analytical confidence intervals: only approximate
-        if ~doBoot
-          se=sqrt(es^2/(2*n2-2)+(n1+n2)/(n1*n2));
-          ci=cat(1,es-tCrit.*se,es+tCrit.*se);
-          if g==1
-            ciType='approximate analytical';
+        if isDep
+          % approximate analytical confidence intervals according to Bonett
+          % (2015, formulae 11 and 15)
+          if ~doBoot
+            se=sqrt(es.^2/(2*df) + stdD.^2./(s1.^2.*df));
+            ci=cat(1,es-zCrit.*se,es+zCrit.*se);
+            if g==1
+              ciType='approximate analytical';
+            end
+          end          
+        else
+          % analytical confidence intervals: only approximate (Kline 2004,
+          % table 4.5, p. 108; notes that exact CI cannot be computed for
+          % Glass's delta)
+          if ~doBoot
+            se=sqrt(es^2/(2*n2-2)+(n1+n2)/(n1*n2));
+            ci=cat(1,es-zCrit.*se,es+zCrit.*se);
+            if g==1
+              ciType='approximate analytical';
+            end
           end
         end
+        % bias correction factor (Hedges 1981, Kline 2004, p. 102 & 106),
+        % applied only to point estimate, not ci; formula is identical for
+        % dependent and independent case (but df are different of course)
+        biasFac=(1-(3./(4*df-1)));
+        es=es.*biasFac;
         
       case 'requiv'
         % note: an alternative computation would work as follows: assign

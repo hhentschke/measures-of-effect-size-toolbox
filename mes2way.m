@@ -136,7 +136,7 @@ function [stats,varargout]=mes2way(X,group,esm,varargin)
 % table of results.
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.6, September 2017
+% Measures of Effect Size Toolbox Version 1.6, April 2018
 % Code by Harald Hentschke (University Hospital of Tübingen) and 
 % Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 

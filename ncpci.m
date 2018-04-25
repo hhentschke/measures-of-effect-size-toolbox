@@ -31,7 +31,7 @@ function ci=ncpci(x,fType,df,varargin)
 
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.6, September 2017
+% Measures of Effect Size Toolbox Version 1.6, April 2018
 % Code by Harald Hentschke (University Hospital of Tübingen) and 
 % Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
@@ -192,7 +192,7 @@ for iIx=loopStartIx:2
     end
   end
   % pick border which is closer to the target value
-  [nada,ix]=min(abs(deltaP));
+  [~,ix]=min(abs(deltaP));
   ci(iIx)=ncp(ix);
 end
 % close figure
