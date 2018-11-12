@@ -31,7 +31,7 @@ function ci=ncpci(x,fType,df,varargin)
 
 
 % -------------------------------------------------------------------------
-% Measures of Effect Size Toolbox Version 1.6, April 2018
+% Measures of Effect Size Toolbox Version 1.6.1, November 2018
 % Code by Harald Hentschke (University Hospital of Tübingen) and 
 % Maik Stüttgen (University Medical Center Mainz)
 % For additional information see Hentschke and Stüttgen, 
